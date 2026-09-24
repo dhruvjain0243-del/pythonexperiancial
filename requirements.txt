@@ -1,0 +1,6 @@
+# StudyVerse - Offline Academic Study Assistant
+# Root-level requirements (Streamlit UI + API client)
+# All heavy backend deps are listed in backend/requirements.txt
+
+streamlit>=1.35.0,<2.0.0
+requests>=2.32.0,<3.0.0

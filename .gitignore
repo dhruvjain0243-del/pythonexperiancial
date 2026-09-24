@@ -1,0 +1,4 @@
+backend/test_tmp/
+test_tmp/
+__pycache__/
+.pytest_cache/
