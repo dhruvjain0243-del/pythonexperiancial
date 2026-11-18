@@ -1,10 +1,13 @@
+[server]
+port = 7860
+address = "0.0.0.0"
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+maxUploadSize = 200
+
+[browser]
+gatherUsageStats = false
+
 [theme]
 base = "light"
-primaryColor = "#B45309"
-backgroundColor = "#FBF0D9"
-secondaryBackgroundColor = "#F4E4C1"
-textColor = "#3D2B1F"
-font = "sans serif"
-
-[client]
-toolbarMode = "minimal"

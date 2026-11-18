@@ -13,6 +13,7 @@ Backend: FastAPI at http://127.0.0.1:8000
 """
 from __future__ import annotations
 
+import os
 import time
 from io import BytesIO
 from typing import Any
@@ -29,7 +30,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-API_BASE = "http://127.0.0.1:8000"
+API_BASE = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
 # ═══════════════════════════════════════════════════════════════════
 # SESSION STATE INITIALIZATION

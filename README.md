@@ -1,105 +1,30 @@
-# StudyVerse
-
-**Official supported implementation:** the root Streamlit app (`app.py`) and FastAPI backend (`backend/`). Together they provide local PDF upload, extraction, indexing, search, practice, and spaced repetition.
-
-The separate `studyverse_offline/` directory contains an optional legacy implementation. New features, fixes, setup instructions, and tests should target the root Streamlit + FastAPI application unless explicitly stated otherwise.
-
-PDF upload limits default to 25 MB and 300 pages. Change them for the backend with `STUDYVERSE_MAX_UPLOAD_MB` and `STUDYVERSE_MAX_PDF_PAGES` environment variables before starting it.
-
-## Stack
-
-| Layer | Technology |
-|-------|------------|
-| **UI** | Streamlit (`app.py`) |
-| **API** | FastAPI (`backend/app/main.py`) |
-| **DB** | SQLite via SQLAlchemy |
-| **PDF** | PyMuPDF (fitz) |
-| **Search** | FAISS (semantic) + FTS5 BM25 (keyword) |
-| **Spaced Rep** | SM-2 algorithm |
-
+---
+title: StudyVerse
+emoji: 📚
+colorFrom: yellow
+colorTo: orange
+sdk: docker
+pinned: false
+license: mit
+short_description: Offline-first AI academic study and document intelligence platform
 ---
 
-## Quick Start
+# 📚 StudyVerse — AI Academic Study Platform
 
-### 1. Install backend dependencies
-```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
+StudyVerse is an offline-first, privacy-focused AI study assistant built with Streamlit + FastAPI + FAISS + SQLite.
 
-### 2. Start everything (Windows)
-```bash
-# From the project root — opens two windows:
-start.bat
-```
+## Features
+- 📄 Document Library (PDF, DOCX, PPTX)
+- 🔍 AI-powered Semantic Search
+- 🤖 AI Tutor Chat
+- 🃏 Flashcard System with Spaced Repetition
+- 📊 Progress Analytics
+- 📓 Smart Notebook
+- 🎯 Practice Arena
 
-Or manually:
-
-```bash
-# Terminal 1 — FastAPI backend
-cd backend
-.venv\Scripts\uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-
-# Terminal 2 — Streamlit UI
-# From project root:
-backend\.venv\Scripts\streamlit run app.py
-```
-
-### 3. Open in browser
-- **UI**: http://localhost:8501
-- **API docs**: http://127.0.0.1:8000/docs
-
----
-
-## Pages
-
-| Page | What it does |
-|------|--------------|
-| 📚 **Library** | Upload PDFs, extract text, index for search |
-| 🔍 **Search Notes** | Hybrid / semantic / keyword search across indexed docs |
-| 🎯 **Practice Arena** | Auto-generate quiz cards from documents |
-| 🔁 **Revision Hub** | SM-2 spaced repetition review of due flashcards |
-| 📈 **Progress** | Streak, mastery breakdown, and retention stats |
-
----
-
-## Tests
-
-```bash
-cd backend
-.venv\Scripts\python -m pytest app/tests/ backend/tests/ -v
-```
-
----
-
-## Project Structure
-
-```
-studyverse/
-├── app.py                    # Streamlit UI (all 5 pages)
-├── start.bat                 # One-click launcher
-├── requirements.txt          # Streamlit + requests
-└── backend/
-    ├── requirements.txt      # FastAPI, SQLAlchemy, PyMuPDF, FAISS, etc.
-    └── app/
-        ├── main.py           # FastAPI app + router registration
-        ├── database.py       # SQLAlchemy engine + session
-        ├── models.py         # Document, PageText, Chunk, Flashcard, StudyLog
-        ├── schemas.py        # Pydantic request/response schemas
-        ├── routers/
-        │   ├── documents.py  # Upload, index, delete
-        │   ├── search.py     # Hybrid/semantic/keyword search
-        │   ├── practice.py   # Flashcard generation + management
-        │   ├── revision.py   # SM-2 due-card review
-        │   ├── progress.py   # Analytics summary
-        │   └── health.py     # /health endpoint
-        └── services/
-            ├── pdf_service.py          # PyMuPDF text extraction
-            ├── chunk_service.py        # Sliding-window chunking
-            ├── embedding_service.py    # Sentence-transformer embeddings + FAISS
-            ├── search_service.py       # FTS5 + FAISS + hybrid merge
-            ├── quiz_service.py         # Regex-based concept card extraction
-            └── spaced_repetition_service.py  # SM-2 algorithm
-```
+## Tech Stack
+- **Frontend:** Streamlit (Sepia theme)
+- **Backend:** FastAPI + Uvicorn
+- **Vector Search:** FAISS + Sentence Transformers
+- **Database:** SQLite + SQLAlchemy
+- **Document Parsing:** PyMuPDF, python-docx, python-pptx
