@@ -1,6 +1,10 @@
-# StudyVerse Offline
+# StudyVerse
 
-**A personal offline academic study assistant** — Upload your PDFs, build a searchable knowledge base, and use spaced repetition to study smarter.
+**Official supported implementation:** the root Streamlit app (`app.py`) and FastAPI backend (`backend/`). Together they provide local PDF upload, extraction, indexing, search, practice, and spaced repetition.
+
+The separate `studyverse_offline/` directory contains an optional legacy implementation. New features, fixes, setup instructions, and tests should target the root Streamlit + FastAPI application unless explicitly stated otherwise.
+
+PDF upload limits default to 25 MB and 300 pages. Change them for the backend with `STUDYVERSE_MAX_UPLOAD_MB` and `STUDYVERSE_MAX_PDF_PAGES` environment variables before starting it.
 
 ## Stack
 
@@ -65,8 +69,7 @@ backend\.venv\Scripts\streamlit run app.py
 
 ```bash
 cd backend
-.venv\Scripts\python -m pytest app/tests/ -v
-# Expected: 11 passed
+.venv\Scripts\python -m pytest app/tests/ backend/tests/ -v
 ```
 
 ---

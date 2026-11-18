@@ -73,6 +73,9 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+.stApp { background-color: #ffffff !important; color: #0f172a !important; }
+[data-testid="stSidebar"] { background-color: #f8fafc !important; border-right: 1px solid #e2e8f0; }
+[data-testid="stHeader"] { background: transparent !important; }
 #MainMenu { visibility: hidden; }
 footer    { visibility: hidden; }
 .stDeployButton { display: none; }
@@ -268,12 +271,12 @@ tab_lib, tab_search, tab_quiz, tab_revision, tab_about = st.tabs([
 with tab_lib:
     st.markdown("### 📚 Document Library")
 
-    with st.expander("➕ Upload PDFs", expanded=True):
+    with st.expander("➕ Upload Documents (PDF, Word, PowerPoint)", expanded=True):
         uploaded_files = st.file_uploader(
-            "Drop PDF files here",
-            type=["pdf"],
+            "Drop PDF, Word, or PowerPoint files here",
+            type=["pdf", "docx", "pptx", "doc", "ppt"],
             accept_multiple_files=True,
-            help="Upload text-based PDFs. Scanned or image-only PDFs cannot be indexed.",
+            help="Upload text-based PDF, Word (.docx, .doc), or PowerPoint (.pptx, .ppt) files.",
             key="lib_uploader",
         )
 
@@ -295,14 +298,14 @@ with tab_lib:
             fails = sum(1 for r in upload_results if r["extraction_status"] == "failed")
 
             if ok:
-                st.success(f"✅ Extracted text from {ok} PDF(s).")
+                st.success(f"✅ Extracted text from {ok} document(s).")
             if warns:
                 st.warning(
                     f"⚠️ {warns} file(s) have no searchable text.\n"
-                    "No searchable text was found. This PDF may be scanned or image-based."
+                    "No searchable text was found in these files."
                 )
             if fails:
-                st.error(f"❌ {fails} file(s) could not be read as valid PDFs.")
+                st.error(f"❌ {fails} file(s) could not be read as valid documents.")
 
     st.markdown("---")
     st.markdown("### 📂 Managed Documents")

@@ -4,6 +4,18 @@ import os
 from pathlib import Path
 from typing import Any
 
+# Add faiss_cpu.libs to DLL directory on Windows
+_dll_handles = []
+for base in (Path(__file__).resolve().parents[2], Path(__file__).resolve().parents[3]):
+    for candidate in (base / ".venv" / "Lib" / "site-packages" / "faiss_cpu.libs", base / "backend" / ".venv" / "Lib" / "site-packages" / "faiss_cpu.libs"):
+        if candidate.is_dir():
+            if hasattr(os, "add_dll_directory"):
+                try:
+                    _dll_handles.append(os.add_dll_directory(str(candidate)))
+                except Exception:
+                    pass
+            os.environ["PATH"] = str(candidate) + os.pathsep + os.environ.get("PATH", "")
+
 import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -26,7 +38,12 @@ class EmbeddingModel:
             cls._instance = SentenceTransformer("all-MiniLM-L6-v2")
         return cls._instance
 
-def build_document_faiss_index(document: Document, chunks: list[Chunk]) -> bool:
+def build_document_faiss_index(
+    document: Document,
+    chunks: list[Chunk],
+    index_path: Path | None = None,
+    metadata_path: Path | None = None,
+) -> bool:
     """
     Generates embeddings for chunks, builds a FAISS index, and saves both to disk.
     """
@@ -47,7 +64,7 @@ def build_document_faiss_index(document: Document, chunks: list[Chunk]) -> bool:
     index.add(embeddings)
     
     # Save FAISS index
-    faiss_path = INDEX_DIR / f"document_{document.id}.faiss"
+    faiss_path = index_path or (INDEX_DIR / f"document_{document.id}.faiss")
     faiss.write_index(index, str(faiss_path))
     
     # Save metadata mapping: FAISS index position -> chunk details
@@ -61,8 +78,8 @@ def build_document_faiss_index(document: Document, chunks: list[Chunk]) -> bool:
         }
         for c in chunks
     ]
-    metadata_path = INDEX_DIR / f"document_{document.id}.json"
-    with open(metadata_path, "w", encoding="utf-8") as f:
+    metadata_file = metadata_path or (INDEX_DIR / f"document_{document.id}.json")
+    with open(metadata_file, "w", encoding="utf-8") as f:
         json.dump(metadata, f)
         
     return True

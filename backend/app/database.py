@@ -29,14 +29,20 @@ def init_db() -> None:
     from . import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+
+    # Small additive migration for databases created before deletion tracking.
+    with engine.begin() as conn:
+        columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(documents)")}
+        if "deletion_status" not in columns:
+            conn.exec_driver_sql("ALTER TABLE documents ADD COLUMN deletion_status VARCHAR(32)")
+        if "deletion_error" not in columns:
+            conn.exec_driver_sql("ALTER TABLE documents ADD COLUMN deletion_error TEXT")
     
-    # Initialize FTS5 virtual table for chunks
+    # Create the FTS5 table only when absent; startup must preserve its entries.
     with engine.connect() as conn:
         from sqlalchemy import text as sqltext
-        # Drop if exists to ensure fresh start during dev, though normally we'd manage this carefully
-        conn.execute(sqltext("DROP TABLE IF EXISTS chunk_fts"))
         conn.execute(sqltext("""
-            CREATE VIRTUAL TABLE chunk_fts USING fts5(
+            CREATE VIRTUAL TABLE IF NOT EXISTS chunk_fts USING fts5(
                 chunk_id UNINDEXED,
                 document_id UNINDEXED,
                 page_number UNINDEXED,

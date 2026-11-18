@@ -29,6 +29,22 @@ import re
 import sqlite3
 from pathlib import Path
 
+import os
+import sys
+from pathlib import Path
+
+# Add faiss_cpu.libs to DLL directory on Windows
+_dll_handles = []
+for base in (Path(__file__).resolve().parents[1], Path(__file__).resolve().parent):
+    for candidate in (base / "backend" / ".venv" / "Lib" / "site-packages" / "faiss_cpu.libs", base / ".venv" / "Lib" / "site-packages" / "faiss_cpu.libs"):
+        if candidate.is_dir():
+            if hasattr(os, "add_dll_directory"):
+                try:
+                    _dll_handles.append(os.add_dll_directory(str(candidate)))
+                except Exception:
+                    pass
+            os.environ["PATH"] = str(candidate) + os.pathsep + os.environ.get("PATH", "")
+
 import faiss
 import numpy as np
 import streamlit as st

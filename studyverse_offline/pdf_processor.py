@@ -30,6 +30,7 @@ from database import (
     insert_document,
     insert_page_texts,
 )
+from document_extractor import extract_document, is_supported_document, get_document_type
 
 import sqlite3
 
@@ -65,6 +66,7 @@ def save_uploaded_pdf(
 ) -> tuple[Path, str]:
     """
     Write *file_obj* to the uploads directory.
+    Supports PDF, Word (.docx, .doc), and PowerPoint (.pptx, .ppt).
 
     Returns
     -------
@@ -73,8 +75,9 @@ def save_uploaded_pdf(
         stored_filename  — the unique filename used on disk
     """
     safe = safe_filename(original_name)
-    if not safe.lower().endswith(".pdf"):
-        raise ValueError(f"'{original_name}' does not appear to be a PDF file.")
+    supported_extensions = (".pdf", ".docx", ".doc", ".pptx", ".ppt")
+    if not any(safe.lower().endswith(ext) for ext in supported_extensions):
+        raise ValueError(f"'{original_name}' is not a supported file type (supported: PDF, Word DOCX/DOC, PowerPoint PPTX/PPT).")
 
     stored_name = _unique_stored_name(safe)
     target = UPLOAD_DIR / stored_name
@@ -93,20 +96,28 @@ def extract_pdf(
     path: Path,
 ) -> tuple[int, list[tuple[int, str]], str | None]:
     """
-    Extract page-wise text from a PDF using PyMuPDF.
+    Extract page-wise or slide-wise text from a document.
+    Supports PDF, Word (.docx, .doc), and PowerPoint (.pptx, .ppt).
 
     Parameters
     ----------
     path : Path
-        Absolute path to the stored PDF file.
+        Absolute path to the stored document file.
 
     Returns
     -------
     (page_count, pages, error_message)
-        page_count    — total number of pages (0 on failure)
+        page_count    — total number of pages/slides (0 on failure)
         pages         — list of (1-based page_number, text) tuples
         error_message — None on success, a user-friendly string on failure
     """
+    doc_type = get_document_type(path)
+
+    # Route Word and PowerPoint documents to document_extractor
+    if doc_type in ("docx", "doc", "pptx", "ppt"):
+        return extract_document(path)
+
+    # Standard PDF processing via PyMuPDF
     try:
         with fitz.open(str(path)) as pdf:
             if not pdf.is_pdf:

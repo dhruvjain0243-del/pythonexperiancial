@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from app.database import Base, get_db
 from app.main import app
 from app.routers import documents
+from app.services.search_service import ensure_fts_table
 
 
 @pytest.fixture()
@@ -19,6 +20,9 @@ def client(tmp_path: Path):
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
+    with session_factory() as session:
+        ensure_fts_table(session)
 
     def override_db():
         session = session_factory()

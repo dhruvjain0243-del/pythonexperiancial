@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from app.database import Base, get_db
 from app.main import app
 from app.models import Chunk
+from app.models import Document, Flashcard, StudyLog
 from app.routers import documents
 from app.services import embedding_service
 from app.services.search_service import ensure_fts_table
@@ -65,6 +66,12 @@ def upload_document(client: TestClient, text: str = "A permutation is an arrange
     return response.json()[0]
 
 
+def fake_index_builder(document, chunks, index_path, metadata_path):
+    index_path.write_bytes(b"test index")
+    metadata_path.write_text("[]", encoding="utf-8")
+    return True
+
+
 def test_search_validation_errors(client: TestClient):
     blank = client.post("/search", json={"query": " ", "mode": "hybrid", "top_k": 5, "min_score": 0})
     assert blank.status_code == 422
@@ -84,7 +91,7 @@ def test_search_without_indexed_documents_returns_clear_message(client: TestClie
 
 
 def test_indexing_replaces_chunks_and_keyword_search_finds_formula(client: TestClient, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr("app.routers.documents.build_document_faiss_index", lambda document, chunks: True)
+    monkeypatch.setattr("app.routers.documents.build_document_faiss_index", fake_index_builder)
     document = upload_document(client, " ".join(["The nPr formula is used for permutation arrangements where order matters."] * 40))
 
     first = client.post(f"/documents/{document['id']}/index")
@@ -114,7 +121,7 @@ def test_indexing_replaces_chunks_and_keyword_search_finds_formula(client: TestC
 
 
 def test_malformed_fts_query_does_not_crash(client: TestClient, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr("app.routers.documents.build_document_faiss_index", lambda document, chunks: True)
+    monkeypatch.setattr("app.routers.documents.build_document_faiss_index", fake_index_builder)
     document = upload_document(client, " ".join(["Factorial notation appears in permutation formulas."] * 40))
     assert client.post(f"/documents/{document['id']}/index").status_code == 200
     response = client.post("/search", json={"query": '" nPr * )', "mode": "keyword", "top_k": 5, "min_score": 0})
@@ -122,10 +129,124 @@ def test_malformed_fts_query_does_not_crash(client: TestClient, monkeypatch: pyt
 
 
 def test_delete_document_removes_chunks_and_fts_entries(client: TestClient, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr("app.routers.documents.build_document_faiss_index", lambda document, chunks: True)
+    monkeypatch.setattr("app.routers.documents.build_document_faiss_index", fake_index_builder)
     document = upload_document(client, " ".join(["Newton described force and acceleration relationships."] * 40))
     assert client.post(f"/documents/{document['id']}/index").status_code == 200
     deleted = client.delete(f"/documents/{document['id']}")
     assert deleted.status_code == 200
     debug = client.get(f"/search/debug/document/{document['id']}")
     assert debug.status_code == 404
+
+
+def test_upload_rejects_actual_size_over_limit(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(documents, "MAX_UPLOAD_BYTES", 10)
+    response = client.post(
+        "/documents/upload",
+        files={"files": ("large.pdf", io.BytesIO(b"%PDF-" + b"x" * 20), "application/pdf")},
+    )
+    assert response.status_code == 413
+    assert "upload limit" in response.json()["detail"]
+
+
+def test_upload_rejects_invalid_pdf_signature(client: TestClient):
+    response = client.post(
+        "/documents/upload",
+        files={"files": ("invalid.pdf", io.BytesIO(b"not a PDF"), "application/pdf")},
+    )
+    assert response.status_code == 400
+    assert "valid PDF" in response.json()["detail"]
+
+
+def test_upload_rejects_unparseable_pdf_with_pdf_signature(client: TestClient):
+    response = client.post(
+        "/documents/upload",
+        files={"files": ("broken.pdf", io.BytesIO(b"%PDF-1.7\nnot a real PDF"), "application/pdf")},
+    )
+    assert response.status_code == 400
+    assert "readable PDF" in response.json()["detail"]
+
+
+def test_upload_rejects_page_count_over_limit(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    pdf = fitz.open()
+    pdf.new_page()
+    pdf.new_page()
+    data = pdf.tobytes()
+    pdf.close()
+    monkeypatch.setattr(documents, "MAX_PDF_PAGES", 1)
+    response = client.post("/documents/upload", files={"files": ("many.pdf", io.BytesIO(data), "application/pdf")})
+    assert response.status_code == 413
+    assert "page limit" in response.json()["detail"]
+
+
+def test_reindex_failure_preserves_previous_keyword_index(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("app.routers.documents.build_document_faiss_index", fake_index_builder)
+    document = upload_document(client, " ".join(["The preserved phrase describes a stable indexed passage."] * 40))
+    assert client.post(f"/documents/{document['id']}/index").status_code == 200
+
+    def fail_builder(*args, **kwargs):
+        raise RuntimeError("simulated model failure")
+
+    monkeypatch.setattr("app.routers.documents.build_document_faiss_index", fail_builder)
+    failed = client.post(f"/documents/{document['id']}/index")
+    assert failed.status_code == 500
+    assert "previous index was retained" in failed.json()["detail"]
+
+    search = client.post("/search", json={"query": "preserved", "mode": "keyword", "top_k": 5})
+    assert search.status_code == 200
+    assert search.json()["results"]
+
+
+def test_successful_delete_removes_flashcards_review_logs_and_index_files(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("app.routers.documents.build_document_faiss_index", fake_index_builder)
+    document = upload_document(client, " ".join(["Newton described force and acceleration relationships."] * 40))
+    assert client.post(f"/documents/{document['id']}/index").status_code == 200
+
+    generator = app.dependency_overrides[get_db]()
+    db = next(generator)
+    card = Flashcard(document_id=document["id"], question="Q", answer="A", context="", page_number=1)
+    db.add(card)
+    db.commit()
+    db.refresh(card)
+    db.add(StudyLog(activity_type="revision", card_id=card.id, quality=4, score=0.8))
+    db.commit()
+    next(generator, None)
+
+    response = client.delete(f"/documents/{document['id']}")
+    assert response.status_code == 200
+    assert response.json()["cleanup_complete"] is True
+    assert client.get(f"/documents/{document['id']}").status_code == 404
+    generator = app.dependency_overrides[get_db]()
+    db = next(generator)
+    assert db.scalar(select(Flashcard.id).where(Flashcard.document_id == document["id"])) is None
+    assert db.scalar(select(StudyLog.id).where(StudyLog.card_id == card.id)) is None
+    assert not list(documents.UPLOAD_DIR.glob("*"))
+    assert not list(embedding_service.INDEX_DIR.glob(f"document_{document['id']}.*"))
+    next(generator, None)
+
+
+def test_partial_delete_retains_document_and_records_cleanup_error(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    document = upload_document(client)
+    upload_path = documents.UPLOAD_DIR / next(
+        path.name for path in documents.UPLOAD_DIR.glob("*") if path.is_file()
+    )
+    original_unlink = type(upload_path).unlink
+
+    def fail_uploaded_file_unlink(path, *args, **kwargs):
+        if path == upload_path:
+            raise PermissionError("simulated file lock")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(upload_path), "unlink", fail_uploaded_file_unlink)
+    response = client.delete(f"/documents/{document['id']}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cleanup_complete"] is False
+    assert body["cleanup_errors"]
+
+    generator = app.dependency_overrides[get_db]()
+    db = next(generator)
+    retained = db.get(Document, document["id"])
+    assert retained is not None
+    assert retained.deletion_status == "partial"
+    assert retained.deletion_error
+    next(generator, None)

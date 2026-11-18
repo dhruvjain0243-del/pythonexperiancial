@@ -38,7 +38,7 @@ def ensure_fts_table(db: Session) -> None:
     db.commit()
 
 
-def insert_chunk_fts_entries(db: Session, chunks: list[Chunk]) -> None:
+def insert_chunk_fts_entries(db: Session, chunks: list[Chunk], commit: bool = True) -> None:
     """Inserts chunks into the FTS5 virtual table."""
     try:
         for chunk in chunks:
@@ -46,8 +46,11 @@ def insert_chunk_fts_entries(db: Session, chunks: list[Chunk]) -> None:
                 sqltext("INSERT INTO chunk_fts (chunk_id, document_id, page_number, text) VALUES (:cid, :did, :pn, :txt)"),
                 {"cid": chunk.id, "did": chunk.document_id, "pn": chunk.page_number, "txt": chunk.text}
             )
-        db.commit()
+        if commit:
+            db.commit()
     except Exception:
+        if not commit:
+            raise
         db.rollback()
         ensure_fts_table(db)
         for chunk in chunks:
@@ -55,7 +58,8 @@ def insert_chunk_fts_entries(db: Session, chunks: list[Chunk]) -> None:
                 sqltext("INSERT INTO chunk_fts (chunk_id, document_id, page_number, text) VALUES (:cid, :did, :pn, :txt)"),
                 {"cid": chunk.id, "did": chunk.document_id, "pn": chunk.page_number, "txt": chunk.text}
             )
-        db.commit()
+        if commit:
+            db.commit()
 
 
 def fts_entry_count(db: Session, document_id: int) -> int:

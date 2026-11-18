@@ -44,6 +44,8 @@ class DocumentDetailResponse(DocumentResponse):
 class DeleteDocumentResponse(BaseModel):
     message: str
     document_id: int
+    cleanup_complete: bool = False
+    cleanup_errors: list[str] = Field(default_factory=list)
     file_deleted: bool
     chunks_deleted: bool = False
     keyword_entries_deleted: bool = False

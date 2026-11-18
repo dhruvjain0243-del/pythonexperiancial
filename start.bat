@@ -1,23 +1,35 @@
 @echo off
-REM ============================================================
-REM  StudyVerse – Full Stack Launcher
-REM  Window 1: FastAPI backend  |  Window 2: Streamlit UI
-REM ============================================================
+setlocal EnableDelayedExpansion
+set "ROOT=%~dp0"
 
 echo.
-echo  [StudyVerse] Starting FastAPI backend...
-start "StudyVerse Backend" cmd /k "cd /d %~dp0backend && .venv\Scripts\uvicorn.exe app.main:app --host 127.0.0.1 --port 8000 --reload"
+echo ============================================================
+echo   StudyVerse Offline - Launching Application
+echo ============================================================
+echo.
 
-echo  [StudyVerse] Waiting 4 seconds for backend to initialise...
-timeout /t 4 /nobreak > nul
+echo [1/2] Starting FastAPI backend on http://127.0.0.1:8000 ...
+start "StudyVerse Backend" /D "%ROOT%backend" "%ROOT%backend\.venv\Scripts\python.exe" -m uvicorn app.main:app --app-dir "%ROOT%backend" --host 127.0.0.1 --port 8000 --reload
 
-echo  [StudyVerse] Starting Streamlit UI...
-start "StudyVerse UI" cmd /k "cd /d %~dp0 && backend\.venv\Scripts\streamlit.exe run app.py --server.port 8501 --server.headless false"
+echo [2/2] Loading AI models and initializing backend (approx. 5 seconds)...
+ping 127.0.0.1 -n 6 > nul
+
+echo Starting Streamlit web interface on http://localhost:8501 ...
+start "StudyVerse UI" /D "%ROOT%" "%ROOT%backend\.venv\Scripts\python.exe" -m streamlit run app.py --server.port 8501 --server.headless false
+
+timeout /t 3 > nul
+start http://localhost:8501
 
 echo.
-echo  StudyVerse is starting!
-echo    Backend:  http://127.0.0.1:8000
-echo    UI:       http://localhost:8501
-echo    API docs: http://127.0.0.1:8000/docs
+echo ============================================================
+echo   StudyVerse is now active!
+echo.
+echo   - Web Interface: http://localhost:8501
+echo   - Backend API:   http://127.0.0.1:8000
+echo   - API Swagger:   http://127.0.0.1:8000/docs
+echo.
+echo   Keep this window and the two spawned terminal windows open.
+echo   Close them when you want to stop the application.
+echo ============================================================
 echo.
 pause

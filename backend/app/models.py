@@ -23,6 +23,8 @@ class Document(Base):
     has_extractable_text: Mapped[bool] = mapped_column(nullable=False, default=False)
     extraction_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     extraction_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    deletion_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    deletion_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
     pages: Mapped[list["PageText"]] = relationship(
