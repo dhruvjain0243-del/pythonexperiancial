@@ -30,7 +30,17 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-API_BASE = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
+def _get_backend_url() -> str:
+    backend_url = os.getenv("BACKEND_URL")
+    if not backend_url:
+        try:
+            backend_url = st.secrets["BACKEND_URL"]
+        except (KeyError, FileNotFoundError):
+            backend_url = ""
+    return str(backend_url).strip().rstrip("/") or "http://127.0.0.1:8000"
+
+
+API_BASE = _get_backend_url()
 
 # ═══════════════════════════════════════════════════════════════════
 # SESSION STATE INITIALIZATION
@@ -825,14 +835,18 @@ with st.sidebar:
                 border-radius: 12px; padding: 0.8rem 1rem; margin-bottom: 1.2rem;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <strong style="color: {'#15803D' if online else '#B91C1C'};">{status_indicator} {status_text}</strong>
-            <span style="font-size:0.72rem; font-family:'JetBrains Mono'; color:#785A44;">:8000</span>
+            <span style="font-size:0.72rem; font-family:'JetBrains Mono'; color:#785A44;">Backend</span>
         </div>
         <small style="color: #785A44; font-size: 0.74rem;">FAISS Vector + FTS5 Ready</small>
     </div>
     """, unsafe_allow_html=True)
 
     if not online:
-        st.info("💡 Start backend server:\n```\nstart.bat\n```")
+        st.info(
+            "💡 For local use, start the backend with `start.bat`. "
+            "On Streamlit Community Cloud, deploy the FastAPI backend separately "
+            "and set `BACKEND_URL` in the app's Secrets."
+        )
 
     st.markdown("<small style='color: #785A44; font-weight:700; text-transform:uppercase; letter-spacing:0.08em;'>Navigation</small>", unsafe_allow_html=True)
 
