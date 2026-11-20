@@ -491,14 +491,38 @@ def _delete(path: str, **kwargs) -> requests.Response | None:
 
 def backend_online() -> bool:
     r = _get("/health")
-    return r is not None and r.status_code == 200
+    if r is None or r.status_code != 200:
+        return False
+    try:
+        data = r.json()
+    except requests.exceptions.JSONDecodeError:
+        return False
+    return isinstance(data, dict) and data.get("status") == "ok"
 
 
 def api_list_documents() -> list[dict]:
     r = _get("/documents")
-    if r and r.status_code == 200:
+    if r is None:
+        st.error("Could not connect to the backend. Set BACKEND_URL to your deployed FastAPI service URL.")
+        return []
+    if r.status_code != 200:
+        st.error(f"Backend returned HTTP {r.status_code} for /documents. Check the FastAPI deployment logs.")
+        return []
+    try:
         data = r.json()
-        return data if isinstance(data, list) else data.get("documents", [])
+    except requests.exceptions.JSONDecodeError:
+        content_type = r.headers.get("Content-Type", "unknown")
+        st.error(
+            "The backend URL returned a non-JSON response for /documents "
+            f"(Content-Type: {content_type}). BACKEND_URL must point to the FastAPI service, "
+            "not the Streamlit app."
+        )
+        return []
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict) and isinstance(data.get("documents"), list):
+        return data["documents"]
+    st.error("The backend returned an unexpected response for /documents; expected a JSON list.")
     return []
 
 
