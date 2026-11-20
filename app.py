@@ -31,13 +31,21 @@ st.set_page_config(
 )
 
 def _get_backend_url() -> str:
+    # 1. Interactive sidebar override in current session
+    if st.session_state.get("backend_url_override"):
+        return st.session_state["backend_url_override"].strip().rstrip("/")
+    # 2. Environment variable
     backend_url = os.getenv("BACKEND_URL")
+    # 3. Streamlit secrets (on Streamlit Community Cloud)
     if not backend_url:
         try:
-            backend_url = st.secrets["BACKEND_URL"]
-        except (KeyError, FileNotFoundError):
+            backend_url = st.secrets.get("BACKEND_URL", "")
+        except Exception:
             backend_url = ""
-    return str(backend_url).strip().rstrip("/") or "http://127.0.0.1:8000"
+    # 4. Default to deployed Render backend
+    if not backend_url:
+        backend_url = "https://pythonexperiancial.onrender.com"
+    return str(backend_url).strip().rstrip("/")
 
 
 API_BASE = _get_backend_url()
@@ -468,24 +476,36 @@ def get_theme_css(theme: str = "Sepia") -> str:
 # ═══════════════════════════════════════════════════════════════════
 # API CLIENT — thin wrapper
 # ═══════════════════════════════════════════════════════════════════
-def _get(path: str, **kwargs) -> requests.Response | None:
+def _safe_json(r: requests.Response | None, default: Any = None) -> Any:
+    if r is None:
+        return default
     try:
-        return requests.get(f"{API_BASE}{path}", timeout=10, **kwargs)
-    except requests.exceptions.ConnectionError:
+        return r.json()
+    except (requests.exceptions.JSONDecodeError, ValueError):
+        return default
+
+
+def _get(path: str, **kwargs) -> requests.Response | None:
+    api_base = _get_backend_url()
+    try:
+        return requests.get(f"{api_base}{path}", timeout=25, **kwargs)
+    except requests.exceptions.RequestException:
         return None
 
 
 def _post(path: str, **kwargs) -> requests.Response | None:
+    api_base = _get_backend_url()
     try:
-        return requests.post(f"{API_BASE}{path}", timeout=60, **kwargs)
-    except requests.exceptions.ConnectionError:
+        return requests.post(f"{api_base}{path}", timeout=90, **kwargs)
+    except requests.exceptions.RequestException:
         return None
 
 
 def _delete(path: str, **kwargs) -> requests.Response | None:
+    api_base = _get_backend_url()
     try:
-        return requests.delete(f"{API_BASE}{path}", timeout=10, **kwargs)
-    except requests.exceptions.ConnectionError:
+        return requests.delete(f"{api_base}{path}", timeout=25, **kwargs)
+    except requests.exceptions.RequestException:
         return None
 
 
@@ -493,29 +513,24 @@ def backend_online() -> bool:
     r = _get("/health")
     if r is None or r.status_code != 200:
         return False
-    try:
-        data = r.json()
-    except requests.exceptions.JSONDecodeError:
-        return False
+    data = _safe_json(r)
     return isinstance(data, dict) and data.get("status") == "ok"
 
 
 def api_list_documents() -> list[dict]:
     r = _get("/documents")
     if r is None:
-        st.error("Could not connect to the backend. Set BACKEND_URL to your deployed FastAPI service URL.")
+        st.error(f"Could not connect to backend at `{_get_backend_url()}`. If on Render free tier, it may be waking up.")
         return []
     if r.status_code != 200:
-        st.error(f"Backend returned HTTP {r.status_code} for /documents. Check the FastAPI deployment logs.")
+        st.error(f"Backend returned HTTP {r.status_code} for /documents. Check FastAPI logs.")
         return []
-    try:
-        data = r.json()
-    except requests.exceptions.JSONDecodeError:
+    data = _safe_json(r)
+    if data is None:
         content_type = r.headers.get("Content-Type", "unknown")
         st.error(
-            "The backend URL returned a non-JSON response for /documents "
-            f"(Content-Type: {content_type}). BACKEND_URL must point to the FastAPI service, "
-            "not the Streamlit app."
+            f"Backend returned non-JSON for /documents (Content-Type: {content_type}). "
+            f"Verify BACKEND_URL (`{_get_backend_url()}`) points to FastAPI, not Streamlit."
         )
         return []
     if isinstance(data, list):
@@ -543,9 +558,10 @@ def api_upload_documents(files: list) -> list[dict]:
     file_tuples = [("files", (f.name, f.read(), _get_mime_type(f.name))) for f in files]
     r = _post("/documents/upload", files=file_tuples)
     if r and r.status_code in (200, 201):
-        data = r.json()
+        data = _safe_json(r, {})
         return data if isinstance(data, list) else data.get("results", [])
-    msg = r.json().get("detail", "Upload failed") if r else "Backend offline"
+    data = _safe_json(r, {})
+    msg = data.get("detail", f"Upload failed (HTTP {r.status_code})") if r else "Backend offline"
     st.error(f"Upload error: {msg}")
     return []
 
@@ -553,8 +569,9 @@ def api_upload_documents(files: list) -> list[dict]:
 def api_index_document(doc_id: int) -> dict | None:
     r = _post(f"/documents/{doc_id}/index", json={})
     if r and r.status_code == 200:
-        return r.json()
-    msg = r.json().get("detail", "Indexing failed") if r else "Backend offline"
+        return _safe_json(r, {})
+    data = _safe_json(r, {})
+    msg = data.get("detail", f"Indexing failed (HTTP {r.status_code})") if r else "Backend offline"
     st.error(f"Indexing error: {msg}")
     return None
 
@@ -562,8 +579,9 @@ def api_index_document(doc_id: int) -> dict | None:
 def api_index_all() -> dict | None:
     r = _post("/documents/index-all", json={})
     if r and r.status_code == 200:
-        return r.json()
-    msg = r.json().get("detail", "Index-all failed") if r else "Backend offline"
+        return _safe_json(r, {})
+    data = _safe_json(r, {})
+    msg = data.get("detail", f"Index-all failed (HTTP {r.status_code})") if r else "Backend offline"
     st.error(f"Index-all error: {msg}")
     return None
 
@@ -571,13 +589,14 @@ def api_index_all() -> dict | None:
 def api_delete_document(doc_id: int) -> bool:
     r = _delete(f"/documents/{doc_id}")
     if r and r.status_code == 200:
-        body = r.json()
+        body = _safe_json(r, {})
         if body.get("cleanup_complete", True):
             return True
         details = "; ".join(body.get("cleanup_errors", [])) or body.get("message", "Cleanup incomplete")
         st.error(f"Delete incomplete: {details}")
         return False
-    msg = r.json().get("detail", "Delete failed") if r else "Backend offline"
+    data = _safe_json(r, {})
+    msg = data.get("detail", f"Delete failed (HTTP {r.status_code})") if r else "Backend offline"
     st.error(f"Delete error: {msg}")
     return False
 
@@ -585,7 +604,7 @@ def api_delete_document(doc_id: int) -> bool:
 def api_get_pages(doc_id: int) -> list[dict]:
     r = _get(f"/documents/{doc_id}/pages")
     if r and r.status_code == 200:
-        data = r.json()
+        data = _safe_json(r, [])
         return data if isinstance(data, list) else data.get("pages", [])
     return []
 
@@ -600,44 +619,47 @@ def api_search(query: str, mode: str, doc_ids: list[int], top_k: int, min_score:
         "include_debug": False,
     })
     if r and r.status_code == 200:
-        return r.json()
+        return _safe_json(r)
+    data = _safe_json(r, {})
     if r and r.status_code == 422:
-        details = r.json().get("detail", "Validation error")
+        details = data.get("detail", "Validation error")
         st.error(f"Search validation error: {details}")
     elif r:
-        msg = r.json().get("detail", "Search failed")
+        msg = data.get("detail", f"Search failed (HTTP {r.status_code})")
         st.error(f"Search error: {msg}")
     else:
-        st.error("Backend offline. Start the FastAPI server and try again.")
+        st.error("Backend offline. Check connection to FastAPI backend.")
     return None
 
 
 def api_get_progress() -> dict | None:
     r = _get("/progress/summary")
     if r and r.status_code == 200:
-        return r.json()
+        return _safe_json(r)
     return None
 
 
 def api_get_due_cards(limit: int = 50) -> list[dict]:
     r = _get(f"/revision/due?limit={limit}")
     if r and r.status_code == 200:
-        return r.json()
+        data = _safe_json(r, [])
+        return data if isinstance(data, list) else []
     return []
 
 
 def api_review_card(card_id: int, quality: int) -> dict | None:
     r = _post(f"/revision/review/{card_id}", json={"quality": quality})
     if r and r.status_code == 200:
-        return r.json()
+        return _safe_json(r)
     return None
 
 
 def api_generate_cards(doc_ids: list[int], max_per_doc: int = 10) -> dict | None:
     r = _post("/practice/generate", json={"document_ids": doc_ids, "max_cards_per_doc": max_per_doc})
     if r and r.status_code == 200:
-        return r.json()
-    msg = r.json().get("detail", "Card generation failed") if r else "Backend offline"
+        return _safe_json(r)
+    data = _safe_json(r, {})
+    msg = data.get("detail", f"Card generation failed (HTTP {r.status_code})") if r else "Backend offline"
     st.error(f"Practice error: {msg}")
     return None
 
@@ -648,7 +670,8 @@ def api_list_flashcards(doc_id: int | None = None) -> list[dict]:
         url += f"?document_id={doc_id}"
     r = _get(url)
     if r and r.status_code == 200:
-        return r.json()
+        data = _safe_json(r, [])
+        return data if isinstance(data, list) else []
     return []
 
 
@@ -853,24 +876,36 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
+    active_url = _get_backend_url()
     st.markdown(f"""
     <div style="background: {'rgba(21, 128, 61, 0.12)' if online else 'rgba(185, 28, 28, 0.12)'};
                 border: 1px solid {'rgba(21, 128, 61, 0.35)' if online else 'rgba(185, 28, 28, 0.35)'};
-                border-radius: 12px; padding: 0.8rem 1rem; margin-bottom: 1.2rem;">
+                border-radius: 12px; padding: 0.8rem 1rem; margin-bottom: 0.8rem;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <strong style="color: {'#15803D' if online else '#B91C1C'};">{status_indicator} {status_text}</strong>
-            <span style="font-size:0.72rem; font-family:'JetBrains Mono'; color:#785A44;">Backend</span>
+            <span style="font-size:0.72rem; font-family:'JetBrains Mono'; color:#785A44;">FastAPI</span>
         </div>
-        <small style="color: #785A44; font-size: 0.74rem;">FAISS Vector + FTS5 Ready</small>
+        <div style="color: #785A44; font-size: 0.72rem; margin-top: 4px; word-break: break-all; font-family: 'JetBrains Mono', monospace;">
+            {active_url}
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
     if not online:
-        st.info(
-            "💡 For local use, start the backend with `start.bat`. "
-            "On Streamlit Community Cloud, deploy the FastAPI backend separately "
-            "and set `BACKEND_URL` in the app's Secrets."
-        )
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("🔄 Wake / Test", use_container_width=True):
+                st.rerun()
+        with col_btn2:
+            toggle_settings = st.checkbox("⚙️ Config", value=False)
+        
+        if toggle_settings:
+            custom_url = st.text_input("Backend API URL", value=active_url, key="input_custom_backend")
+            if st.button("Connect URL", use_container_width=True):
+                st.session_state["backend_url_override"] = custom_url
+                st.rerun()
+        
+        st.caption("⏳ *Render free tier may take ~30-40s to wake from cold sleep. Click **Wake / Test** to retry.*")
 
     st.markdown("<small style='color: #785A44; font-weight:700; text-transform:uppercase; letter-spacing:0.08em;'>Navigation</small>", unsafe_allow_html=True)
 
